@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dark Side ASCII</title>
+    <style>
+      :root {
+        --bg: oklch(0.12 0.01 255);
+        --cover: oklch(0.06 0.006 255);
+        --text: oklch(0.94 0.018 220);
+        --prism: oklch(0.71 0.12 221);
+        --beam: oklch(0.94 0.015 220);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        overflow: auto;
+        font-family: ui-monospace, monospace;
+      }
+
+      .scene {
+        width: min(92vmin, 980px);
+        aspect-ratio: 1;
+        display: grid;
+        place-items: center;
+        background: var(--cover);
+        border-radius: 18px;
+        overflow: hidden;
+      }
+
+      .frame {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      pre {
+        position: relative;
+        z-index: 1;
+        margin: 0;
+        width: max-content;
+        height: max-content;
+        color: var(--text);
+        font-family: "Courier New", ui-monospace, monospace;
+        font-size: 8px;
+        line-height: 1;
+        letter-spacing: 0;
+        white-space: pre;
+        user-select: none;
+        text-shadow:
+          0 0 8px rgba(196, 220, 255, 0.06),
+          0 0 24px rgba(92, 166, 255, 0.04);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="scene">
+      <section class="frame">
+        <pre id="ascii-art" aria-label="Animated ASCII prism"></pre>
+      </section>
+    </main>
+
+    <script>
+      const width = 129;
+      const height = 39;
+      const prismStroke = getComputedStyle(document.documentElement).getPropertyValue("--prism").trim();
+      const whiteBeam = getComputedStyle(document.documentElement).getPropertyValue("--beam").trim();
+      const rainbow = [
+        "#ff5d57",
+        "#ff9f1c",
+        "#ffe74c",
+        "#54d56c",
+        "#39b0ff",
+        "#5f6fff",
+        "#9d5bff",
+      ];
+      const prism = {
+        apex: { x: 64, y: 2 },
+        left: { x: 42, y: 29 },
+        right: { x: 86, y: 29 },
+      };
+
+      const entry = { x: 0, y: 23 };
+      const hit = { x: 51, y: 14 };
+      const exitPrism = { x: 77, y: 16 };
+      const exitX = 128;
+
+      const art = document.getElementById("ascii-art");
+      const frame = document.querySelector(".frame");
+
+      function linePoints(a, b) {
+        const points = [];
+        const dx = Math.abs(b.x - a.x);
+        const dy = Math.abs(b.y - a.y);
+        const sx = a.x < b.x ? 1 : -1;
+        const sy = a.y < b.y ? 1 : -1;
+        let err = dx - dy;
+        let x = a.x;
+        let y = a.y;
+
+        while (true) {
+          points.push({ x, y });
+          if (x === b.x && y === b.y) break;
+          const e2 = err * 2;
+          if (e2 > -dy) {
+            err -= dy;
+            x += sx;
+          }
+          if (e2 < dx) {
+            err += dx;
+            y += sy;
+          }
+        }
+
+        return points;
+      }
+
+      function createGrid(fillChar = " ") {
+        return Array.from({ length: height }, () =>
+          Array.from({ length: width }, () => ({ char: fillChar, color: "", alpha: 1 }))
+        );
+      }
+
+      function setCell(grid, x, y, char, color = "", alpha = 1) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        grid[y][x] = { char, color, alpha };
+      }
+
+      function edgeChar(from, to, isBase = false) {
+        if (isBase) return "_";
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        if (dx === 0) return "|";
+        return (dx > 0) === (dy > 0) ? "\\" : "/";
+      }
+
+      function prismInsetOffset(point) {
+        if (point.y >= prism.left.y) return { x: 0, y: -1 };
+        if (point.x < prism.apex.x) return { x: 1, y: 0 };
+        if (point.x > prism.apex.x) return { x: -1, y: 0 };
+        return { x: 0, y: 1 };
+      }
+
+      function prismSecondInsetOffset(point) {
+        if (point.y >= prism.left.y) return { x: 0, y: -2 };
+        if (point.x < prism.apex.x) return { x: 2, y: 0 };
+        if (point.x > prism.apex.x) return { x: -2, y: 0 };
+        return { x: 0, y: 2 };
+      }
+
+      function drawCornerNode(grid, x, y, variant) {
+        const cornerColor = "oklch(0.76 0.1 214)";
+        setCell(grid, x, y, "+", cornerColor);
+
+        if (variant === "top") {
+          setCell(grid, x - 1, y + 1, "/", cornerColor);
+          setCell(grid, x + 1, y + 1, "\\", cornerColor);
+          setCell(grid, x, y + 1, "v", "oklch(0.64 0.06 214 / 0.82)");
+          setCell(grid, x, y + 2, ".", "oklch(0.54 0.04 214 / 0.5)");
+          return;
+        }
+
+        const direction = variant === "left" ? 1 : -1;
+        setCell(grid, x + direction, y - 1, variant === "left" ? "/" : "\\", cornerColor);
+        setCell(grid, x + direction, y, variant === "left" ? ">" : "<", "oklch(0.64 0.06 214 / 0.82)");
+        setCell(grid, x + direction * 2, y - 1, ".", "oklch(0.54 0.04 214 / 0.5)");
+      }
+
+      function drawStatic(grid) {
+        const prismEdges = [
+          { points: linePoints(prism.apex, prism.left), base: false },
+          { points: linePoints(prism.apex, prism.right), base: false },
+          { points: linePoints(prism.left, prism.right), base: true },
+        ];
+
+        for (const edge of prismEdges) {
+          edge.points.forEach((point, index) => {
+            const isCorner = index === 0 || index === edge.points.length - 1;
+            const nextPoint = edge.points[Math.min(index + 1, edge.points.length - 1)];
+            const char = isCorner ? " " : edgeChar(point, nextPoint, edge.base);
+            setCell(grid, point.x, point.y, char, prismStroke);
+
+            if (!isCorner) {
+              const inset = prismInsetOffset(point);
+              const supportChar = "░";
+              setCell(
+                grid,
+                point.x + inset.x,
+                point.y + inset.y,
+                supportChar,
+                "oklch(0.62 0.07 214 / 0.75)"
+              );
+
+              const secondInset = prismSecondInsetOffset(point);
+              const secondChar = "▒";
+              setCell(
+                grid,
+                point.x + secondInset.x,
+                point.y + secondInset.y,
+                secondChar,
+                "oklch(0.5 0.05 214 / 0.55)"
+              );
+            }
+          });
+        }
+
+        drawCornerNode(grid, prism.apex.x, prism.apex.y, "top");
+        drawCornerNode(grid, prism.left.x, prism.left.y, "left");
+        drawCornerNode(grid, prism.right.x, prism.right.y, "right");
+
+        const title = [
+          { text: ".-PINK FLOYD-.", x: 8, y: 4 },
+          { text: "|THE DARK SIDE|", x: 7, y: 6 },
+          { text: "'-OF THE MOON-'", x: 8, y: 8 },
+        ];
+
+        for (const row of title) {
+          [...row.text].forEach((char, index) => {
+            const color = char === "|" || char === "." || char === "'" || char === "-" ? "oklch(0.74 0.03 220)" : "oklch(0.9 0.02 220)";
+            setCell(grid, row.x + index, row.y, char, color);
+          });
+        }
+      }
+
+      function stampPath(grid, points, progress, color, chars) {
+        const count = Math.max(0, Math.floor(points.length * progress));
+        for (let i = 0; i < count; i += 1) {
+          const point = points[i];
+          const char = chars[Math.min(chars.length - 1, i % chars.length)];
+          setCell(grid, point.x, point.y, char, color);
+        }
+      }
+
+      function drawThinBeam(grid, points, progress) {
+        const count = Math.max(0, Math.floor(points.length * progress));
+        for (let i = 0; i < count; i += 1) {
+          const point = points[i];
+          const intensity = (i + 1) / Math.max(1, count);
+          const char = intensity > 0.72 ? "/" : intensity > 0.38 ? "-" : ".";
+          setCell(grid, point.x, point.y, char, whiteBeam);
+
+          if (i > 6 && i % 3 === 0) {
+            setCell(grid, point.x, point.y + 1, ".", "oklch(0.84 0.02 220 / 0.18)");
+          }
+        }
+      }
+
+      function drawSpark(grid, center, phase) {
+        const flicker = [".", "*", "+", "*"];
+        const index = Math.floor(phase * flicker.length) % flicker.length;
+        setCell(grid, center.x, center.y, flicker[index], "oklch(0.92 0.05 95)");
+        setCell(grid, center.x - 1, center.y, "·", "oklch(0.84 0.03 220 / 0.75)");
+        setCell(grid, center.x + 1, center.y + 1, "·", "oklch(0.84 0.03 220 / 0.75)");
+      }
+
+      function drawPrismShimmer(grid, phase, progress, path) {
+        if (progress <= 0.02) return;
+
+        const visibleCount = Math.max(0, Math.floor(path.length * progress));
+        const head = Math.max(0, visibleCount - 1);
+        const trailStart = Math.max(0, head - 6);
+
+        for (let i = trailStart; i <= head; i += 1) {
+          const point = path[i];
+          if (!point) continue;
+
+          const local = i - trailStart;
+          const pulse = Math.sin(phase * 10 + i * 0.85) * 0.5 + 0.5;
+          const intensity = (local + 1) / (head - trailStart + 1);
+          const char = intensity > 0.82 ? "=" : intensity > 0.58 ? "-" : intensity > 0.32 ? ":" : ".";
+          const color = `oklch(${0.8 + intensity * 0.14} ${0.03 + pulse * 0.024} 205 / ${0.28 + intensity * 0.56})`;
+
+          setCell(grid, point.x, point.y, char, color);
+
+          if (intensity > 0.34) {
+            setCell(grid, point.x, point.y + 1, intensity > 0.68 ? ":" : ".", `oklch(0.82 0.03 205 / ${0.12 + intensity * 0.18})`);
+          }
+
+          if (i > trailStart + 1 && intensity > 0.52) {
+            setCell(grid, point.x - 1, point.y, ".", `oklch(0.84 0.024 210 / ${0.1 + intensity * 0.14})`);
+          }
+        }
+      }
+
+      function drawInnerDispersion(grid, progress, path) {
+        if (progress <= 0.02) return;
+
+        const count = Math.max(0, Math.floor(path.length * progress));
+        for (let i = 0; i < count; i += 1) {
+          const point = path[i];
+          if (!point) continue;
+
+          const spread = Math.min(2, Math.floor((i / Math.max(1, path.length - 1)) * 3));
+          const ratio = i / Math.max(1, count - 1);
+
+          const coreColor =
+            ratio < 0.35
+              ? "oklch(0.95 0.012 220 / 0.96)"
+              : ratio < 0.7
+                ? "oklch(0.9 0.02 215 / 0.94)"
+                : "oklch(0.84 0.035 225 / 0.92)";
+          setCell(grid, point.x, point.y, ratio > 0.7 ? "=" : ratio > 0.35 ? "-" : ".", coreColor);
+
+          if (spread >= 1) {
+            const midColor =
+              ratio < 0.45
+                ? "oklch(0.88 0.018 220 / 0.46)"
+                : "oklch(0.8 0.04 220 / 0.42)";
+            setCell(grid, point.x, point.y + 1, ":", midColor);
+          }
+
+          if (spread >= 2) {
+            setCell(grid, point.x, point.y + 2, ".", "oklch(0.74 0.03 235 / 0.26)");
+          }
+        }
+      }
+
+      function drawBand(grid, path, progress, color, rowOffset, spreadFactor = 1, bandThickness = 1) {
+        const count = Math.max(0, Math.floor(path.length * progress));
+        let previousTopY = null;
+        let previousBottomY = null;
+
+        for (let i = 0; i < count; i += 1) {
+          const point = path[i];
+          const growth = Math.floor((i / Math.max(1, path.length - 1)) * spreadFactor);
+          const centerY = point.y + rowOffset + growth;
+          const thickness = bandThickness;
+          const topY = centerY - Math.floor((thickness - 1) / 2);
+          const bottomY = topY + thickness - 1;
+
+          if (previousTopY !== null) {
+            const bridgeTop = Math.min(previousTopY, topY);
+            const bridgeBottom = Math.max(previousBottomY, bottomY);
+            for (let fillY = bridgeTop; fillY <= bridgeBottom; fillY += 1) {
+              setCell(grid, point.x, fillY, "█", color);
+            }
+          }
+
+          for (let fillY = topY; fillY <= bottomY; fillY += 1) {
+            const char = fillY === topY && thickness > 1 ? "▓" : "█";
+            setCell(grid, point.x, fillY, char, color);
+          }
+
+          previousTopY = topY;
+          previousBottomY = bottomY;
+        }
+      }
+
+      const inputPath = linePoints(entry, hit);
+      const innerPath = linePoints(hit, exitPrism);
+      const rainbowPaths = rainbow.map((_, index) =>
+        linePoints(exitPrism, { x: exitX, y: 18 + (index - 3) * 2 })
+      );
+
+      function ease(value) {
+        return value < 0 ? 0 : value > 1 ? 1 : 1 - Math.pow(1 - value, 3);
+      }
+
+      function render(now) {
+        const t = (now % 5400) / 5400;
+        const beamIn = ease(t / 0.42);
+        const beamInner = ease((t - 0.23) / 0.29);
+        const beamOut = ease((t - 0.34) / 0.33);
+        const grid = createGrid(" ");
+
+        drawStatic(grid);
+
+        drawThinBeam(grid, inputPath, beamIn);
+        drawPrismShimmer(grid, t, beamInner, innerPath);
+
+        if (beamIn > 0.93) {
+          drawSpark(grid, hit, t * 12);
+        }
+
+        if (beamInner > 0.86) {
+          drawSpark(grid, exitPrism, t * 10 + 0.35);
+        }
+
+        drawInnerDispersion(grid, beamInner, innerPath);
+
+        rainbowPaths.forEach((path, index) => {
+          const stagger = ease((t - (0.34 + index * 0.015)) / 0.31);
+          const centeredOffset = Math.round((index - (rainbowPaths.length - 1) / 2) * 0.1);
+          const bandThickness = index === 0 || index === rainbowPaths.length - 1 ? 1 : 2;
+          drawBand(grid, path, stagger, rainbow[index], centeredOffset, 0, bandThickness);
+        });
+
+        const html = grid
+          .map((row) =>
+            row
+              .map((cell) => {
+                if (!cell.color && cell.alpha === 1) {
+                  return cell.char === " " ? "&nbsp;" : cell.char;
+                }
+                const safeChar = cell.char === " " ? "&nbsp;" : cell.char;
+                return `<span style="color:${cell.color};opacity:${cell.alpha}">${safeChar}</span>`;
+              })
+              .join("")
+          )
+          .join("\n");
+
+        art.innerHTML = html;
+        if (!art.dataset.fitted) {
+          fitAsciiToFrame();
+          art.dataset.fitted = "true";
+        }
+        requestAnimationFrame(render);
+      }
+
+      function fitAsciiToFrame() {
+        if (!frame || !art) return;
+
+        let low = 1;
+        let high = 32;
+        let best = 1;
+
+        while (low <= high) {
+          const mid = (low + high) >> 1;
+          art.style.fontSize = `${mid}px`;
+
+          const fitsWidth = art.scrollWidth <= frame.clientWidth;
+          const fitsHeight = art.scrollHeight <= frame.clientHeight;
+
+          if (fitsWidth && fitsHeight) {
+            best = mid;
+            low = mid + 1;
+          } else {
+            high = mid - 1;
+          }
+        }
+
+        art.style.fontSize = `${best}px`;
+      }
+
+      new ResizeObserver(() => {
+        fitAsciiToFrame();
+      }).observe(frame);
+
+      fitAsciiToFrame();
+      requestAnimationFrame(render);
+    </script>
+  </body>
+</html>

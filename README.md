@@ -1,1 +1,1 @@
-# the-dark-side-of-the-moon-ascii-art
+# The Dark Side of The Moon ASCII Art
